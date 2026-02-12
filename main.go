@@ -3,41 +3,79 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"html/template"
 	"net/http"
 	"os/exec"
-	"text/template"
+	"time"
 
-	"golang.ngrok.com/ngrok"
-	"golang.ngrok.com/ngrok/config"
+	"golang.ngrok.com/ngrok/v2"
 )
 
-// //////////////////ngrok////////////////
-func main() {
-	if err := run(context.Background()); err != nil {
-		log.Fatal(err)
-	}
-}
-func run(ctx context.Context) error {
-	ln, err := ngrok.Listen(ctx,
-		config.HTTPEndpoint(
-			config.WithDomain("liked-together-mantis.ngrok-free.app"),
-		),
+var (
+	server    *http.Server
+	agent     ngrok.Agent
+	url       string
+	camstatus string
+	clientIP  string
+)
 
-		//config.TCPEndpoint(),
-		//ngrok.WithAuthtokenFromEnv(),
+func main() {
+	startNgrok()
+
+}
+
+func startNgrok() {
+
+	ctx := context.Background()
+	var err error
+
+	agent, err = ngrok.NewAgent(
+		//ngrok.WithAuthtoken("YOUR_AUTHTOKEN_HERE"),
 		ngrok.WithAuthtoken("36gmx4MIeEG3BrAIUf9RiRC8Dzg_3g7KHHphRsiWQzNsQcJXu"),
 	)
 	if err != nil {
-		return err
+		println("Agent error:", err)
+		return
 	}
-	log.Println("Ingress established at:", ln.URL())
-	return http.Serve(ln, http.HandlerFunc(handler))
+
+	listener, err := agent.Listen(
+		ctx,
+		ngrok.WithURL("liked-together-mantis.ngrok-free.app"),
+		ngrok.WithDescription("ტესტი"),
+	)
+	if err != nil {
+		println("Listener error:", err)
+		return
+	}
+
+	url = listener.URL().String()
+	println("HTTP endpoint online: %s", url)
+
+	server = &http.Server{
+		Handler: http.HandlerFunc(handler),
+	}
+
+	if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+		println("Server error:", err)
+	}
 }
 
-/////////////ngrok/////////////
+func stopNgrok() {
 
-// ////////// http post/get method ///////////////
+	if server != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = server.Shutdown(ctx)
+		server = nil
+	}
+	if agent != nil {
+		agent.Disconnect()
+		agent = nil
+	}
+	println("Ngrok server stopped")
+}
+
+// ---- Handlers ----
 func handler(w http.ResponseWriter, r *http.Request) {
 
 	if r.URL.Path != "/" {

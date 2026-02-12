@@ -12,10 +12,11 @@ require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.16 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.ngrok.com/muxado/v2 v2.0.0 // indirect
-	golang.org/x/net v0.15.0 // indirect
+	golang.ngrok.com/muxado/v2 v2.0.1 // indirect
+	golang.ngrok.com/ngrok/v2 v2.1.1 // indirect
+	golang.org/x/net v0.30.0 // indirect
 	golang.org/x/sync v0.3.0 // indirect
-	golang.org/x/sys v0.12.0 // indirect
-	golang.org/x/term v0.12.0 // indirect
-	google.golang.org/protobuf v1.31.0 // indirect
+	golang.org/x/sys v0.26.0 // indirect
+	golang.org/x/term v0.25.0 // indirect
+	google.golang.org/protobuf v1.35.1 // indirect
 )
