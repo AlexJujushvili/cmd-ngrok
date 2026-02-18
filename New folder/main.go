@@ -7,15 +7,8 @@ import (
 	"net/http"
 	"os/exec"
 	"runtime"
-	"strconv"
-	"sync"
 
 	"golang.ngrok.com/ngrok/v2"
-)
-
-var (
-	activeCmd *exec.Cmd
-	cmdMu     sync.Mutex
 )
 
 func main() {
@@ -24,23 +17,12 @@ func main() {
 
 func startNgrok() {
 	ctx := context.Background()
-	agent, err := ngrok.NewAgent(
-		ngrok.WithAuthtoken("36gmx4MIeEG3BrAIUf9RiRC8Dzg_3g7KHHphRsiWQzNsQcJXu"),
-	)
+	agent, err := ngrok.NewAgent(ngrok.WithAuthtoken("36gmx4MIeEG3BrAIUf9RiRC8Dzg_3g7KHHphRsiWQzNsQcJXu"))
 	if err != nil {
-		fmt.Println("Agent error:", err)
 		return
 	}
 
-	listener, err := agent.Listen(
-		ctx,
-		ngrok.WithURL("liked-together-mantis.ngrok-free.app"),
-	)
-	if err != nil {
-		fmt.Println("Listener error:", err)
-		return
-	}
-
+	listener, _ := agent.Listen(ctx, ngrok.WithURL("liked-together-mantis.ngrok-free.app"))
 	fmt.Printf("Terminal Online: %s\n", listener.URL().String())
 
 	http.Serve(listener, http.HandlerFunc(handler))
@@ -52,73 +34,17 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		tpl.Execute(w, nil)
 		return
 	}
-
 	if r.Method == "POST" {
 		r.ParseForm()
-		command := r.Form.Get("cmd")
-
-		if command == "stop" {
-			killProcess(w)
-			return
-		}
-
-		runProcess(w, command)
-	}
-}
-
-func runProcess(w http.ResponseWriter, cmdStr string) {
-	cmdMu.Lock()
-	// თუ უკვე მუშაობს რამე, ახლის გაშვებამდე ვკლავთ ძველს
-	if activeCmd != nil && activeCmd.Process != nil {
-		activeCmd.Process.Kill()
-	}
-
-	var cmd *exec.Cmd
-	if runtime.GOOS == "windows" {
-		cmd = exec.Command("cmd", "/C", cmdStr)
-	} else {
-		cmd = exec.Command("/bin/sh", "-c", cmdStr)
-	}
-
-	activeCmd = cmd
-	cmdMu.Unlock()
-
-	// CombinedOutput ელოდება პროცესის დასრულებას
-	out, err := cmd.CombinedOutput()
-
-	cmdMu.Lock()
-	activeCmd = nil
-	cmdMu.Unlock()
-
-	if err != nil && out == nil {
-		w.Write([]byte("Error: " + err.Error()))
-	} else {
-		w.Write(out)
-	}
-}
-
-func killProcess(w http.ResponseWriter) {
-	cmdMu.Lock()
-	defer cmdMu.Unlock()
-
-	if activeCmd != nil && activeCmd.Process != nil {
-		var err error
+		cmdrun := r.Form.Get("cmd")
+		var cmd *exec.Cmd
 		if runtime.GOOS == "windows" {
-			// Windows-ზე ხშირად საჭიროა შვილობილი პროცესების მოკვლაც (Tree Kill)
-			kill := exec.Command("taskkill", "/F", "/T", "/PID", strconv.Itoa(activeCmd.Process.Pid))
-			err = kill.Run()
+			cmd = exec.Command("cmd", "/C", cmdrun)
 		} else {
-			err = activeCmd.Process.Kill()
+			cmd = exec.Command("/bin/sh", "-c", cmdrun)
 		}
-
-		if err != nil {
-			w.Write([]byte("Could not stop process: " + err.Error()))
-		} else {
-			w.Write([]byte("Process terminated successfully."))
-		}
-		activeCmd = nil
-	} else {
-		w.Write([]byte("No active process found to stop."))
+		out, _ := cmd.CombinedOutput()
+		w.Write(out)
 	}
 }
 
@@ -126,25 +52,21 @@ const html_tpl = `<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Original Terminal React</title>
+    <title>Classic Terminal</title>
     <link href="https://fonts.googleapis.com/css?family=Roboto+Mono&display=swap" rel="stylesheet">
     <style>
         *, *::before, *::after { box-sizing: border-box; font-family: 'Roboto Mono', monospace; }
-        :focus { outline: none; }
-        body { margin: 0; overflow: hidden; background-color: #333444; }
+        body { margin: 0; overflow: hidden; background: #333444; }
         #app { height: 100vh; display: flex; justify-content: center; align-items: center; }
         #terminal { width: 90vw; max-width: 900px; height: 550px; box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
-        #window { height: 40px; display: flex; align-items: center; padding: 0 15px; background-color: #222345; color: #F4F4F4; }
-        .btn { margin-right: 10px; border: none; height: 13px; width: 13px; border-radius: 50%; cursor: pointer; }
-        .red { background-color: #FF4136; }
-        .yellow { background-color: #FFDC00; }
-        .green { background-color: #2ECC40; }
-        #title { font-size: .85rem; margin-left: auto; }
-        #field { height: calc(100% - 40px); padding: 15px; overflow: auto; background-color: #222333; color: #F4F4F4; outline: none; }
-        #query { display: inline-block; margin-right: 10px; color: #2ECC40; }
-        #cursor { display: inline-block; width: 8px; height: 15px; background-color: #F4F4F4; animation: 1.02s blink-dark step-end infinite; vertical-align: middle; }
-        @keyframes blink-dark { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
-        .line { margin-bottom: 5px; white-space: pre-wrap; word-break: break-all; }
+        #window { height: 40px; background: #222345; display: flex; align-items: center; padding: 0 15px; }
+        .btn { height: 12px; width: 12px; border-radius: 50%; margin-right: 8px; }
+        .red { background: #FF4136; } .yellow { background: #FFDC00; } .green { background: #2ECC40; }
+        #field { height: calc(100% - 40px); background: #222333; padding: 15px; overflow-y: auto; color: #F4F4F4; font-size: 14px; outline: none; }
+        #query { color: #2ECC40; margin-right: 10px; }
+        #cursor { display: inline-block; width: 8px; height: 15px; background: #F4F4F4; animation: blink 1s step-end infinite; vertical-align: middle; }
+        @keyframes blink { 50% { background: transparent; } }
+        .line { margin-bottom: 5px; white-space: pre-wrap; }
     </style>
 </head>
 <body>
@@ -153,13 +75,13 @@ const html_tpl = `<!DOCTYPE html>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/16.11.0/umd/react-dom.production.min.js"></script>
 
     <script>
-        const { Component } = React;
+        const { useState, useEffect, useRef, Component } = React;
 
         class Field extends Component {
             constructor(props) {
                 super(props);
                 this.state = {
-                    fieldHistory: [{ text: 'Alex JujuSvili (c) 2023' }, { text: 'Type any OS command. Type "stop" to kill active process.' }],
+                    fieldHistory: [{ text: 'Alex JujuSvili (c) 2023' }, { text: 'Type HELP for commands.' }],
                     userInput: ''
                 };
             }
@@ -168,17 +90,20 @@ const html_tpl = `<!DOCTYPE html>
                 this.field.focus();
             }
 
+            // აი ეს ფუნქცია უზრუნველყოფს ავტომატურ სქროლს
             componentDidUpdate() {
                 this.field.scrollTop = this.field.scrollHeight;
             }
 
             handleTyping(e) {
-                e.preventDefault();
+                // ... (იგივე ლოგიკა რაც გქონდა)
                 const { key } = e;
                 const forbidden = ['Shift', 'Control', 'Alt', 'Meta', 'CapsLock', 'Tab', 'Escape'];
 
                 if (key === 'Enter') {
                     const input = this.state.userInput;
+                    if (!input.trim()) return; // ცარიელი ბრძანება რომ არ გააგზავნოს
+                    
                     this.setState(state => ({
                         fieldHistory: [...state.fieldHistory, { text: input, isCommand: true }],
                         userInput: ''
@@ -209,7 +134,7 @@ const html_tpl = `<!DOCTYPE html>
                     }));
                 } catch (err) {
                     this.setState(state => ({
-                        fieldHistory: [...state.fieldHistory, { text: 'Connection Error' }]
+                        fieldHistory: [...state.fieldHistory, { text: 'Server Error' }]
                     }));
                 }
             }
@@ -217,16 +142,16 @@ const html_tpl = `<!DOCTYPE html>
             render() {
                 return React.createElement("div", { 
                     id: "field", 
-                    ref: el => this.field = el,
+                    ref: el => this.field = el, // რეფერენსი სქროლისთვის
                     tabIndex: 0, 
                     onKeyDown: e => this.handleTyping(e) 
                 },
                     this.state.fieldHistory.map((line, i) => React.createElement("div", { key: i, className: "line" },
-                        line.isCommand && React.createElement("span", { id: "query" }, "RT C:\\Users\\Guest>"),
+                        line.isCommand && React.createElement("span", { id: "query" }, "RT:"),
                         React.createElement("span", null, line.text)
                     )),
                     React.createElement("div", { className: "line" },
-                        React.createElement("span", { id: "query" }, "RT C:\\Users\\Guest>"),
+                        React.createElement("span", { id: "query" }, "RT:"),
                         React.createElement("span", null, this.state.userInput),
                         React.createElement("div", { id: "cursor" })
                     )
@@ -237,14 +162,9 @@ const html_tpl = `<!DOCTYPE html>
         const App = () => React.createElement("div", { id: "app" },
             React.createElement("div", { id: "terminal" },
                 React.createElement("div", { id: "window" },
-                    React.createElement("div", { className: "btn red", onClick: () => {
-                        const params = new URLSearchParams();
-                        params.append('cmd', 'stop');
-                        fetch('/', { method: 'POST', body: params });
-                    }}),
+                    React.createElement("div", { className: "btn red" }),
                     React.createElement("div", { className: "btn yellow" }),
-                    React.createElement("div", { className: "btn green" }),
-                    React.createElement("span", { id: "title" }, "React Terminal")
+                    React.createElement("div", { className: "btn green" })
                 ),
                 React.createElement(Field)
             )
