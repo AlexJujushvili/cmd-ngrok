@@ -56,7 +56,7 @@ func startNgrok() {
 	}
 
 	fmt.Printf("Terminal Online: %s\n", ln.Addr().String())
-	
+
 	// სერვერი გაეშვება ლისენერზე
 	err = http.Serve(ln, http.HandlerFunc(handler))
 	if err != nil {
@@ -78,7 +78,7 @@ func StopNgrok() {
 		agent.Disconnect()
 		agent = nil
 	}
-	
+
 	fmt.Println("Ngrok server fully stopped")
 }
 
@@ -97,10 +97,10 @@ func handler(w http.ResponseWriter, r *http.Request) {
 			killProcess(w)
 			return
 		}
-		
+
 		if command == "stop server" {
 			w.Write([]byte("SERVER_STOPPED"))
-			
+
 			// ვიყენებთ goroutine-ს, რომ პასუხის გაგზავნა მოესწროს
 			go StopNgrok()
 			return
@@ -114,7 +114,9 @@ func handler(w http.ResponseWriter, r *http.Request) {
 func runProcess(w http.ResponseWriter, cmdStr string) {
 	cmdStr = strings.TrimSpace(cmdStr)
 	args := strings.Fields(cmdStr)
-	if len(args) == 0 { return }
+	if len(args) == 0 {
+		return
+	}
 
 	if args[0] == "cd" {
 		if len(args) < 2 {
@@ -123,7 +125,9 @@ func runProcess(w http.ResponseWriter, cmdStr string) {
 		}
 		target := args[1]
 		newPath := filepath.Join(currentDir, target)
-		if filepath.IsAbs(target) { newPath = target }
+		if filepath.IsAbs(target) {
+			newPath = target
+		}
 
 		if info, err := os.Stat(newPath); err == nil && info.IsDir() {
 			currentDir = newPath
@@ -220,7 +224,9 @@ const html_tpl = `<!DOCTYPE html>
                 super(props);
                 this.state = {
                     fieldHistory: [{ text: 'Terminal v11.0 Online' }],
-                    userInput: ''
+                    userInput: '',
+                    commandHistory: [],
+                    historyIndex: -1
                 };
             }
 
@@ -238,7 +244,12 @@ const html_tpl = `<!DOCTYPE html>
                     if (cleanCmd === 'cls') this.setState({ fieldHistory: [] });
                     return;
                 }
-                
+                // ბრძანებების ისტორიაში დამატება (მაქს 100)
+                this.setState(s => {
+                    const newCmdHistory = [cleanCmd, ...s.commandHistory.filter(c => c !== cleanCmd)].slice(0, 100);
+                    return { commandHistory: newCmdHistory, historyIndex: -1 };
+                });
+
                 const params = new URLSearchParams();
                 params.append('cmd', cleanCmd);
                 fetch('/', { method: 'POST', body: params })
@@ -259,6 +270,25 @@ const html_tpl = `<!DOCTYPE html>
                     });
             }
 
+            handleHistoryKey(e) {
+                const { commandHistory, historyIndex, userInput } = this.state;
+                if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    if (commandHistory.length === 0) return;
+                    let next = historyIndex < commandHistory.length - 1 ? historyIndex + 1 : historyIndex;
+                    if (historyIndex === -1) next = 0;
+                    this.setState({ historyIndex: next, userInput: commandHistory[next] });
+                } else if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    if (historyIndex <= 0) {
+                        this.setState({ historyIndex: -1, userInput: historyIndex === 0 ? '' : userInput });
+                        return;
+                    }
+                    const next = historyIndex - 1;
+                    this.setState({ historyIndex: next, userInput: next === -1 ? '' : commandHistory[next] });
+                }
+            }
+
             render() {
                 return React.createElement('div', { id: 'field', onClick: () => this.inputRef && this.inputRef.focus() },
                     this.state.fieldHistory.map((l, i) => React.createElement('div', { key: i, className: 'line' },
@@ -274,11 +304,14 @@ const html_tpl = `<!DOCTYPE html>
                             id: 'active-input',
                             value: this.state.userInput,
                             onChange: e => this.setState({ userInput: e.target.value }),
-                            onKeyDown: e => { if (e.key === 'Enter') { 
-                                const val = this.state.userInput;
-                                this.setState(s => ({ fieldHistory: [...s.fieldHistory, { text: val, isCommand: true }], userInput: '' }));
-                                this.handleInputExecution(val);
-                            }},
+                            onKeyDown: e => {
+                                if (e.key === 'ArrowUp' || e.key === 'ArrowDown') { this.handleHistoryKey(e); return; }
+                                if (e.key === 'Enter') {
+                                    const val = this.state.userInput;
+                                    this.setState(s => ({ fieldHistory: [...s.fieldHistory, { text: val, isCommand: true }], userInput: '' }));
+                                    this.handleInputExecution(val);
+                                }
+                            },
                             autoComplete: 'off',
                             spellCheck: 'false'
                         })
@@ -295,7 +328,7 @@ const html_tpl = `<!DOCTYPE html>
                         React.createElement('div', { style: { width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#ffbd2e' } }),
                         React.createElement('div', { style: { width: '12px', height: '12px', borderRadius: '50%', backgroundColor: '#27c93f' } })
                     ),
-                    React.createElement('span', { style: { marginLeft: 'auto', fontSize: '12px', opacity: 0.5 } }, 'STABLE_CORE_V11')
+                    React.createElement('span', { style: { marginLeft: 'auto', fontSize: '12px', opacity: 0.5 } }, 'STABLE_CORE_V17')
                 ),
                 React.createElement(Field)
             )
@@ -305,11 +338,3 @@ const html_tpl = `<!DOCTYPE html>
     </script>
 </body>
 </html>`
-
-
-
-
-
-
-
-
