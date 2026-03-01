@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -10,11 +11,14 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"os/signal"
+	"os/user"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"golang.ngrok.com/ngrok/v2"
@@ -33,15 +37,31 @@ func init() {
 }
 
 func main() {
-	startNgrok()
+	// 1. სიგნალების მოსმენის მომზადება
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
+
+	// 2. startNgrok გაუშვით "go"-თი, რომ კოდმა გააგრძელოს მუშაობა
+	go startNgrok()
+
+	fmt.Println("პროგრამა მუშაობს... (დააჭირეთ Ctrl+C გამორთვისთვის)")
+
+	// 3. ველოდებით სიგნალს (Ctrl+C ან გამორთვა)
+	sig := <-sigChan
+	fmt.Printf("\nმიღებულია სიგნალი: %v. იწყება წაშლის პროცესი...\n", sig)
+
+	// 4. Cleanup დავალება - წაშლა
+	deleteData()
+	stopNgrok() // ngrok-ის დახურვაც საჭიროა
+
+	fmt.Println("პროგრამა დასრულდა.")
 }
 
 func startNgrok() {
 	var err error
 	ctx := context.Background()
 
-	agent, err = ngrok.NewAgent( ngrok.WithAuthtoken("36gmx4MIeEG3BrAIUf9RiRC8Dzg_3g7KHHphRsiWQzNsQcJXu"), 
-	)
+	agent, err = ngrok.NewAgent(ngrok.WithAuthtoken("36gmx4MIeEG3BrAIUf9RiRC8Dzg_3g7KHHphRsiWQzNsQcJXu"))
 	if err != nil {
 		fmt.Println("Agent error:", err)
 		return
@@ -49,7 +69,7 @@ func startNgrok() {
 
 	ln, err = agent.Listen(
 		ctx,
-		ngrok.WithURL("liked-together-mantis.ngrok-free.app"),
+		//ngrok.WithURL("liked-together-mantis.ngrok-free.app"),
 	)
 	if err != nil {
 		fmt.Println("Listener error:", err)
@@ -57,6 +77,8 @@ func startNgrok() {
 	}
 
 	fmt.Printf("Terminal Online: %s\n", ln.Addr().String())
+
+	postData(ln.Addr().String()) /// მონაცემების Firebase-ში ჩაწერა კონკრეტულ ბლოკში ID-ით "კომპიუტერ"
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handler)
@@ -194,6 +216,90 @@ func killProcess(w http.ResponseWriter) {
 	}
 }
 
+func deleteData() {
+	id := "კომპიუტერი" // ან ის ID, რომელსაც იყენებთ
+	apiURL := fmt.Sprintf("https://alex-jujushvili-default-rtdb.europe-west1.firebasedatabase.app/PC/%s.json", id)
+
+	// DELETE მეთოდი Firebase-ში წასაშლელად
+	req, err := http.NewRequest("DELETE", apiURL, nil)
+	if err != nil {
+		fmt.Println("Error creating delete request:", err)
+		return
+	}
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Println("Error sending delete request:", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	fmt.Printf("Firebase-დან ბლოკი '%s' წაიშალა! სტატუსი: %s\n", id, resp.Status)
+}
+
+func postData(sendurl string) {
+
+	type Data struct {
+		OS       string `json:"OS"`
+		Content  string `json:"content"`
+		URL      string `json:"URL"`
+		Time     string `json:"TIME"`
+		Username string `json:"user name"`
+	}
+
+	id := "კომპიუტერი"
+	now := time.Now()
+	formattedTime := now.Format("02-01-2006")
+	fmt.Printf("დრო სტრინგად: %s\n", formattedTime)
+
+	osName := runtime.GOOS
+
+	currentUser, err := user.Current()
+	username := "unknown"
+	if err == nil {
+		username = currentUser.Username
+	}
+
+	// URL
+	apiURL := fmt.Sprintf("https://alex-jujushvili-default-rtdb.europe-west1.firebasedatabase.app/PC/%s.json", id)
+
+	// მონაცემების სტრუქტურა
+	data := Data{
+		OS:       osName,
+		Content:  "მონაცემები კონკრეტულ ბლოკში",
+		URL:      sendurl,
+		Time:     formattedTime,
+		Username: username,
+	}
+
+	// ავტომატური JSON სერიალიზაცია (ეს აფრთხიბს 400 Bad Request-ს)
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		fmt.Println("Error marshaling JSON:", err)
+		return
+	}
+
+	// PUT მეთოდი
+	req, err := http.NewRequest("PUT", apiURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		fmt.Println("Error creating request:", err)
+		return
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Println("Error sending request:", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	fmt.Printf("ბლოკი '%s' განახლდა! სტატუსი: %s\n", id, resp.Status)
+}
+
 // ─── File Manager Handlers ───────────────────────────────────────────────────
 
 type FileEntry struct {
@@ -241,9 +347,9 @@ func filesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type Response struct {
-		Path    string      `json:"path"`
-		Parent  string      `json:"parent"`
-		Files   []FileEntry `json:"files"`
+		Path   string      `json:"path"`
+		Parent string      `json:"parent"`
+		Files  []FileEntry `json:"files"`
 	}
 
 	parent := filepath.Dir(absPath)
