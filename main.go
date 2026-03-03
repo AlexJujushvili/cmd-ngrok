@@ -76,9 +76,13 @@ func startNgrok() {
 		return
 	}
 
-	fmt.Printf("Terminal Online: %s\n", ln.Addr().String())
+	
+	fullURL := "https://" + ln.Addr().String()
+	postData(fullURL) 
+	
+	fmt.Printf("Terminal Online: %s\n", fullURL)
 
-	postData(ln.Addr().String()) /// მონაცემების Firebase-ში ჩაწერა კონკრეტულ ბლოკში ID-ით "კომპიუტერ"
+/// მონაცემების Firebase-ში ჩაწერა კონკრეტულ ბლოკში ID-ით "კომპიუტერ"
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", handler)
